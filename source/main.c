@@ -5,6 +5,7 @@
 #include "srvsys.h"
 #include "draw.h"
 #include "service.h"
+#include "logger.h"
 
 #define MAX_SESSIONS 1
 #define SERVICE_ENDPOINTS 3
@@ -12,11 +13,11 @@ static void handle_commands(void)
 {
 	u32* cmdbuf;
 	u16 cmdid;
-	int res;
+	//int res;
 
 	cmdbuf = getThreadCommandBuffer();
 	cmdid = cmdbuf[0] >> 16;
-	res = 0;
+	//res = 0;
 	switch (cmdid) {
 	case 1: {//initialise
 		cmdbuf[0] = 0x30040;
@@ -127,10 +128,12 @@ Result fsinitValue;
 void __appInit() {
 	srvSysInit();
 	fsSysInit();
+
 }
 
 // this is called after main exits
 void __appExit() {
+
 	fsSysExit();
 	srvSysExit();
 }
@@ -158,18 +161,9 @@ void __ctru_exit(int rc) {
 
 
 void testLog() {
-	openLogger();
-	logstr("test message");
-	closeLogger();
-}
-
-void *memset32(void *dest, u32 value, u32 size)
-{
-	u32 *dest32 = (u32 *)dest;
-
-	for(u32 i = 0; i < size/4; i++) dest32[i] = value;
-
-	return dest;
+	logInit();
+	logStr("test message v2");
+	logExit();
 }
 
 void doDraw() {
@@ -185,7 +179,7 @@ void doDraw() {
 
 	char data[2014];
 
-	sprintf(data, "%08x", (u64)fsinitValue);
+	sprintf(data, "0x%08x", (unsigned int)fsinitValue);
 	Draw_DrawString(10, 10, COLOR_TITLE, data);//"Hello world1\n");
 	svcSleepThread(2000000000);
 	Draw_RestoreFramebuffer();
@@ -194,10 +188,10 @@ void doDraw() {
 }
 
 int main() {
-//	doDraw();
+	doDraw();
 
 	int g_active_handles;
-	char g_ret_buf[1024];
+	//char g_ret_buf[1024];
 
 
 	Result ret;

@@ -90,7 +90,7 @@ Result IFile_Read(IFile *file, u64 *total, void *buffer, u32 len)
   return res;
 }
 
-Result IFile_Write(IFile *file, u64 *total, void *buffer, u32 len, u32 flags)
+Result IFile_Write(IFile *file, u64 *total, const void *buffer, u32 len, u32 flags)
 {
   u32 written;
   u32 left;

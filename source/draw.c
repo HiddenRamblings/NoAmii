@@ -29,7 +29,7 @@
 #include "fmt.h"
 #include "draw.h"
 #include "font.h"
-#include "memory.h"
+//#include "memory.h"
 #include "utils.h"
 
 u8 framebufferCache[FB_BOTTOM_SIZE];
@@ -110,6 +110,16 @@ u32 Draw_DrawFormattedString(u32 posX, u32 posY, u32 color, const char *fmt, ...
 
     return Draw_DrawString(posX, posY, color, buf);
 }
+
+void *memset32(void *dest, u32 value, u32 size)
+{
+    u32 *dest32 = (u32 *)dest;
+
+    for(u32 i = 0; i < size/4; i++) dest32[i] = value;
+
+    return dest;
+}
+
 
 void Draw_FillFramebuffer(u32 value)
 {

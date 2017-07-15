@@ -5,70 +5,60 @@
 #include "logger.h"
 #include "ifile.h"
 
-#ifndef PATH_MAX
-#define PATH_MAX 255
-#define _MAX_LFN 255
-#endif
+#define LOG_FILE "/luma/titles/lognfc.txt"
 
-int logger_is_initd = 0;
+static int logger_started = 0;
+static IFile f;
 
-static IFile file;
-
-void openLogger()
-{
-    if (logger_is_initd)
-        return;
-
-    Result r = IFile_Open(&file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, "/luma/titles/logx2.txt"), FS_OPEN_CREATE | FS_OPEN_WRITE | FS_OPEN_READ);
-
-    if (R_FAILED(r)) {
-        logger_is_initd = -1;
+void logInit() {
+    if (logger_started) {
         return;
     }
 
-    //IFile_Truncate(&file);
+    Result res = IFile_Open(&f, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, LOG_FILE), FS_OPEN_CREATE | FS_OPEN_WRITE | FS_OPEN_READ);
+    if (R_FAILED(res)) {
+		logger_started = -1;
+		return;
+    }
 
-    logger_is_initd = 1;
-}
-
-void
-logstr(const char *str)
-{
-    if (logger_is_initd == -1)
-        return; // Errored during init. Don't bother.
-
-    u32 len = strlen(str);
 	u64 total;
-    IFile_Write(&file, &total, str, len, FS_WRITE_FLUSH);
+	IFile_Write(&f, &total, "----\n", 5, FS_WRITE_FLUSH);
+
+    logger_started = 1;
 }
 
-void
-logu64(u64 progId)
-{
-    char str[] = "Title: 0000000000000000\n";
-    u32 i = 22;
-    while (progId) {
-        static const char hexDigits[] = "0123456789ABCDEF";
-        str[i--] = hexDigits[(u32)(progId & 0xF)];
-        progId >>= 4;
+void logStr(const char *str) {
+    if (logger_started <= 0) {
+        return;
     }
 
-    logstr(str);
+	u64 total;
+	IFile_Write(&f, &total, str, strlen(str), FS_WRITE_FLUSH);
 }
 
-void closeLogger()
-{
-    if (logger_is_initd)
+void logBuf(char *prefix, u8* data, size_t len) {
+	char bufstr[len*3 + 3];
+	memset(bufstr, 0, sizeof(bufstr));
+	for(int pos=0; pos<len; pos++) {
+		snprintf(&bufstr[pos*3], 4, "%02x ", data[pos]);
+		if (pos > 0 && pos % 12 == 0) {
+			bufstr[pos*3+2] = '\n';
+		}
+	}
+	printf("%s hex: %s\n", prefix, bufstr);
+}
+
+void logExit() {
+    if (logger_started <= 0)
         return;
 
-    IFile_Close(&file);
-    logger_is_initd = 0;
+    IFile_Close(&f);
+    logger_started = 0;
 }
 
-void panicstr(const char *str)
-{
-    logstr(str);
-    closeLogger();
+void logCrash(const char *str) {
+    logStr(str);
+    logExit();
     svcBreak(USERBREAK_ASSERT);
 }
 
