@@ -128,3 +128,4 @@ Result IFile_Write(IFile *file, u64 *total, void *buffer, u32 len, u32 flags)
   *total = cur;
   return res;
 }
+

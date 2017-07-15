@@ -4,6 +4,7 @@
 #include <sys/iosupport.h>
 #include "srvsys.h"
 #include "draw.h"
+#include "service.h"
 
 #define MAX_SESSIONS 1
 
@@ -125,49 +126,46 @@ static Result should_terminate(int *term_request)
   return 0;
 }
 
+Result fsinitValue;
+
 // this is called before main
-void __appInit()
-{
-  srvSysInit();
+void __appInit() {
+    srvSysInit();
+    fsSysInit();
 }
 
 // this is called after main exits
-void __appExit()
-{
-  srvSysExit();
+void __appExit() {
+    fsSysExit();
+    srvSysExit();
 }
 
 // stubs for non-needed pre-main functions
 void __sync_init();
 void __sync_fini();
 void __system_initSyscalls();
+void __libc_init_array(void);
+void __libc_fini_array(void);
 
-void __ctru_exit(int rc)
-{
-  __appExit();
-  __sync_fini();
-  svcExitProcess();
+void initSystem(void (*retAddr)(void)) {
+    __libc_init_array();
+    __sync_init();
+    __system_initSyscalls();
+    __appInit();
 }
 
-void initSystem(void (*retAddr)(void))
-{
-  __sync_init();
-  __system_initSyscalls();
-  __appInit();
+void __ctru_exit(int rc) {
+    __appExit();
+    __sync_fini();
+    __libc_fini_array();
+    svcExitProcess();
 }
 
-int writeFile(char *filepath, const char *data, u32 datasize) {
-	FILE *f;
-	int writesize=0;
 
-	f = fopen(filepath, "w");
-	if(f==NULL) return -3;
-
-	writesize = fwrite(data, 1, datasize, f);
-	fclose(f);
-
-	if(writesize!=datasize) return -4;
-	return writesize;
+void testLog() {
+    openLogger();
+    logstr("test message");
+    closeLogger();
 }
 
 void *memset32(void *dest, u32 value, u32 size)
@@ -181,15 +179,23 @@ void *memset32(void *dest, u32 value, u32 size)
 
 void doDraw() {
 	svcKernelSetState(0x10000, 1);
-	svcSleepThread(5 * 1000 * 100LL);
+	//svcSleepThread(2000000000);
 	Draw_SetupFramebuffer();
 
 	Draw_Lock();
     Draw_ClearFramebuffer();
     Draw_FlushFramebuffer();
-	Draw_DrawString(10, 10, COLOR_TITLE, "Hello world\n");
-	svcSleepThread(10 * 1000 * 100LL);
+
+    testLog();
+
+    char data[2014];
+
+    sprintf(data, "%08x", (u64)fsinitValue);
+	Draw_DrawString(10, 10, COLOR_TITLE, data);//"Hello world1\n");
+	svcSleepThread(2000000000);
+	Draw_RestoreFramebuffer();
 	Draw_Unlock();
+	svcKernelSetState(0x10000, 1);
 }
 
 int main()

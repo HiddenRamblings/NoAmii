@@ -14,26 +14,18 @@ int logger_is_initd = 0;
 
 static IFile file;
 
-static Result fileOpen(IFile *file, FS_ArchiveID archiveId, const char *path, int flags)
-{
-    FS_Path filePath = {PATH_ASCII, strnlen(path, 255) + 1, path},
-            archivePath = {PATH_EMPTY, 1, (u8 *)""};
-
-    return IFile_Open(file, archiveId, archivePath, filePath, flags);
-}
-
-void
-openLogger()
+void openLogger()
 {
     if (logger_is_initd)
         return;
-    
-    Result r = fileOpen(&file, ARCHIVE_SDMC, "/luma/titles/logx2.txt", FS_OPEN_CREATE | FS_OPEN_WRITE | FS_OPEN_READ);
-    
+
+    Result r = IFile_Open(&file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, "/luma/titles/logx2.txt"), FS_OPEN_CREATE | FS_OPEN_WRITE | FS_OPEN_READ);
+
     if (R_FAILED(r)) {
         logger_is_initd = -1;
+        return;
     }
-    
+
     //IFile_Truncate(&file);
 
     logger_is_initd = 1;
@@ -64,15 +56,16 @@ logu64(u64 progId)
     logstr(str);
 }
 
-void
-closeLogger()
+void closeLogger()
 {
+    if (logger_is_initd)
+        return;
+
     IFile_Close(&file);
     logger_is_initd = 0;
 }
 
-void
-panicstr(const char *str)
+void panicstr(const char *str)
 {
     logstr(str);
     closeLogger();

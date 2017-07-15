@@ -111,6 +111,7 @@ AccessControlInfo:
   InterruptNumbers:
   ServiceAccessControl:
     - fs:LDR
+    - fs:USER
   FileSystemAccess:
     - DirectSdmc
     - CtrNandRw
