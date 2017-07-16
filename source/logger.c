@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include "logger.h"
 #include "ifile.h"
 
@@ -25,6 +26,19 @@ void logInit() {
 	IFile_Write(&f, &total, "----\n", 5, FS_WRITE_FLUSH);
 
     logger_started = 1;
+}
+
+void logPrintf(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    static char buffer[4096];
+
+	vsprintf(buffer, format, args);
+
+    logStr(buffer);
+
+    va_end(args);
 }
 
 void logStr(const char *str) {
