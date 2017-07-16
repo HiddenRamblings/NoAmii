@@ -37,11 +37,13 @@ AccessControlInfo:
   CoreVersion                   : 2
   DescVersion                   : 2
 
-  MemoryType                    : Base
+  MemoryType                    : System
   HandleTableSize: 150
 
   MemoryMapping:
     - 0x1F000000 - 0x1F5FFFFF                 # VRAM (cached)
+  IORegisterMapping:
+    - 0x1EC00000 - 0x1ECFFFFF #IO registers for keypad (input.h)
 
   SystemCallAccess:
     AcceptSession: 74

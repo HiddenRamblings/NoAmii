@@ -6,6 +6,7 @@
 #include "draw.h"
 #include "service.h"
 #include "logger.h"
+#include "input.h"
 
 #define MAX_SESSIONS 1
 #define SERVICE_ENDPOINTS 3
@@ -181,7 +182,9 @@ void doDraw() {
 
 	sprintf(data, "0x%08x", (unsigned int)fsinitValue);
 	Draw_DrawString(10, 10, COLOR_TITLE, data);//"Hello world1\n");
-	svcSleepThread(2000000000);
+	//svcSleepThread(2000000000);
+	waitInputWithTimeout(10 * 1000);
+
 	Draw_RestoreFramebuffer();
 	Draw_Unlock();
 	svcKernelSetState(0x10000, 1);
