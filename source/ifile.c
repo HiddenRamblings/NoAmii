@@ -27,105 +27,113 @@
 #include <3ds.h>
 #include "ifile.h"
 
-Result IFile_Open(IFile *file, FS_ArchiveID archiveId, FS_Path archivePath, FS_Path filePath, u32 flags)
-{
-  Result res;
+Result IFile_Open(IFile *file, FS_ArchiveID archiveId, FS_Path archivePath, FS_Path filePath, u32 flags) {
+	Result res;
 
-  res = FSUSER_OpenFileDirectly(&file->handle, archiveId, archivePath, filePath, flags, 0);
-  file->pos = 0;
-  file->size = 0;
-  return res;
+	res = FSUSER_OpenFileDirectly(&file->handle, archiveId, archivePath, filePath, flags, 0);
+	if (R_FAILED(res)) return res;
+
+	file->pos = 0;
+	file->size = 0;
+
+	if (flags & FS_OPEN_WRITE) {
+		u64 size;
+		Result sizeres = IFile_GetSize(file, &size);
+		if (R_FAILED(sizeres)) return res;
+		file->size = size;
+		file->pos = size;
+	}
+
+	return res;
 }
 
-Result IFile_Close(IFile *file)
-{
-  return FSFILE_Close(file->handle);
+Result IFile_Close(IFile *file) {
+	return FSFILE_Close(file->handle);
 }
 
-Result IFile_GetSize(IFile *file, u64 *size)
-{
-  Result res;
+Result IFile_GetSize(IFile *file, u64 *size) {
+	Result res;
 
-  res = FSFILE_GetSize(file->handle, size);
-  file->size = *size;
-  return res;
+	res = FSFILE_GetSize(file->handle, size);
+	file->size = *size;
+	return res;
 }
 
-Result IFile_Read(IFile *file, u64 *total, void *buffer, u32 len)
-{
-  u32 read;
-  u32 left;
-  char *buf;
-  u64 cur;
-  Result res;
-
-  if (len == 0)
-  {
-    *total = 0;
-    return 0;
-  }
-
-  buf = (char *)buffer;
-  cur = 0;
-  left = len;
-  while (1)
-  {
-    res = FSFILE_Read(file->handle, &read, file->pos, buf, left);
-    if (R_FAILED(res))
-    {
-      break;
-    }
-
-    cur += read;
-    file->pos += read;
-    if (read == left)
-    {
-      break;
-    }
-    buf += read;
-    left -= read;
-  }
-
-  *total = cur;
-  return res;
+Result IFile_Truncate(IFile *file) {
+	return FSFILE_SetSize(file->handle, 0);
 }
 
-Result IFile_Write(IFile *file, u64 *total, const void *buffer, u32 len, u32 flags)
-{
-  u32 written;
-  u32 left;
-  char *buf;
-  u64 cur;
-  Result res;
+Result IFile_Seek(IFile *file, u64 pos) {
+	file->pos = pos;
+	return 0;
+}
 
-  if (len == 0)
-  {
-    *total = 0;
-    return 0;
-  }
+Result IFile_Read(IFile *file, u64 *total, void *buffer, u32 len) {
+	u32 read;
+	u32 left;
+	char *buf;
+	u64 cur;
+	Result res;
 
-  buf = (char *)buffer;
-  cur = 0;
-  left = len;
-  while (1)
-  {
-    res = FSFILE_Write(file->handle, &written, file->pos, buf, left, flags);
-    if (R_FAILED(res))
-    {
-      break;
-    }
+	if (len == 0) {
+		*total = 0;
+		return 0;
+	}
 
-    cur += written;
-    file->pos += written;
-    if (written == left)
-    {
-      break;
-    }
-    buf += written;
-    left -= written;
-  }
+	buf = (char *)buffer;
+	cur = 0;
+	left = len;
+	while (1) {
+		res = FSFILE_Read(file->handle, &read, file->pos, buf, left);
+		if (R_FAILED(res)) {
+			break;
+		}
 
-  *total = cur;
-  return res;
+		cur += read;
+		file->pos += read;
+		if (read == left) {
+			break;
+		}
+		buf += read;
+		left -= read;
+	}
+
+	*total = cur;
+	return res;
+}
+
+Result IFile_Write(IFile *file, u64 *total, const void *buffer, u32 len, u32 flags) {
+	u32 written;
+	u32 left;
+	char *buf;
+	u64 cur;
+	Result res;
+
+	if (len == 0) {
+		*total = 0;
+		return 0;
+	}
+
+	buf = (char *)buffer;
+	cur = 0;
+	left = len;
+	while (1) {
+		res = FSFILE_Write(file->handle, &written, file->pos, buf, left, flags);
+		if (R_FAILED(res)) {
+			break;
+		}
+
+		cur += written;
+		file->pos += written;
+		if (written == left) {
+			break;
+		}
+
+		buf += written;
+		left -= written;
+	}
+
+	*total = cur;
+	return res;
 }
 

@@ -7,11 +7,20 @@
 #include "service.h"
 #include "logger.h"
 #include "input.h"
+#include "ifile.h"
+#include "nfc3d/amitool.h"
 
 #define MAX_SESSIONS 1
 #define SERVICE_ENDPOINTS 3
 
-void showString(const char *str, int value);
+#define AMIIBO_YEAR_FROM_DATE(dt) ((dt >> 1) + 2000)
+#define AMIIBO_MONTH_FROM_DATE(dt) ((*((&dt)+1) >> 5) & 0xF)
+#define AMIIBO_DAY_FROM_DATE(dt) (*((&dt)+1) & 0x1F)
+
+#define BSWAP_U32(num) ((num>>24)&0xff) | ((num<<8)&0xff0000) | ((num>>8)&0xff00) | ((num<<24)&0xff000000)
+
+
+static void showString(const char *str, u32 value);
 
 
 typedef enum {
@@ -19,14 +28,13 @@ typedef enum {
 } SCANNER_STATE;
 
 
-bool amiiboloaded = 0;
-bool counter = 0;
-bool removeAmiibo = 0;
+static u8 AmiiboFileRaw[AMIIBO_MAX_SIZE];
+static u8 AmiiboFilePlain[AMIIBO_MAX_SIZE];
 
-SCANNER_STATE state = AS_NOT_INITIALISED;
+static SCANNER_STATE state = AS_NOT_INITIALISED;
 
 
-void logState(int cmd, SCANNER_STATE state) {
+static void logState(int cmd, SCANNER_STATE state) {
 	char *cmdstr = NULL;
 	switch (cmd) {
 		case 0x0001: cmdstr = "Initialize"; break;
@@ -84,8 +92,15 @@ static void handle_commands(void) {
 	u32* cmdbuf = getThreadCommandBuffer();
 	u16 cmdid = cmdbuf[0] >> 16;
 
-	showString("cmd", cmdid);
+	//we need to preserve the command buffer for reading any parameter values as any
+	//service calls (such as IFILE_Write) will clobber it.
+	u32 cmdcache[10];
+	memcpy(cmdcache, cmdbuf, sizeof(cmdcache));
+
 	logState(cmdid, state);
+	logPrintf("cmd %08x\tstate %d\n", cmdid, state);
+	showString("cmd", cmdid);
+	showString("cmd", cmdcache[0]);
 
 	switch (cmdid) {
 		case 0x1: { //initialise
@@ -154,12 +169,18 @@ static void handle_commands(void) {
 			break;
 		}
 		case 0x11: { //GetTagInfo
-			NFC_TagInfo taginfo = {
-				0x7,
-				0x0,
-				0x02,
-				{0x04,0xA4,0x7F,0x52,0xC2,0x3E,0x80}
-			};
+			NFC_TagInfo taginfo;
+			memset(&taginfo, 0, sizeof(taginfo));
+			taginfo.id_offset_size = 0x7;
+			taginfo.unk_x3 = 0x02;
+			taginfo.id[0] = AmiiboFileRaw[0];
+			taginfo.id[1] = AmiiboFileRaw[1];
+			taginfo.id[2] = AmiiboFileRaw[2];
+			taginfo.id[3] = AmiiboFileRaw[4];
+			taginfo.id[4] = AmiiboFileRaw[5];
+			taginfo.id[5] = AmiiboFileRaw[6];
+			taginfo.id[6] = AmiiboFileRaw[7];
+
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 13, 0);
 			cmdbuf[1] = 0;
             memcpy(&cmdbuf[2], &taginfo, sizeof(taginfo));
@@ -173,26 +194,84 @@ static void handle_commands(void) {
 		}
 		case 0x13: { //OpenAppData
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
-			cmdbuf[1] = 0;
-            break;
+
+			if (cmdcache[0] != IPC_MakeHeader(0x13, 1, 0))
+				logPrintf("Command mismatch %x\n", cmdcache[0]);
+			else
+				logPrintf("Cmd match OpenAppData %x\n", cmdcache[0]);
+			u32 appid = cmdcache[1];
+			logPrintf("openappdata id %x transalted %x\n", appid, BSWAP_U32(appid));
+
+			appid = BSWAP_U32(appid);
+
+			//todo: Amiibosettings_byte0 bit5 must be set, and the byteswapped amiibo_appID in amiibosettings must match the input appID
+			if (memcmp(&appid, &AmiiboFilePlain[0xB6], sizeof(appid))) {
+				logStr("appid does NOT match");
+				cmdbuf[1] = 0xC8A17638;
+			} else {
+				cmdbuf[1] = 0;
+			}
+			break;
 		}
 		case 0x15: { //ReadAppData
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 2);
 			cmdbuf[1] = 0;
+			cmdbuf[2]=IPC_Desc_StaticBuffer(0xD8,0);
+			//the buffer must exist outside of the function scope as it must survive till the svcReceiveReply is called
+			cmdbuf[3]=(u32)&AmiiboFilePlain[0xDC];
+
+			if (cmdcache[1] < 0xD8) {
+				logStr("Buffer too small");
+			}
+
+			//todo: validate buffer size
+
+			//u32 * staticbufs = getThreadStaticBuffers();
+
+			//logPrintf("readappdata bufsize %x\n", staticbufs[0]);
             break;
 		}
 		case 0x17: { // 	GetAmiiboSettings
-			NFC_AmiiboSettings settings;
+			NFC_AmiiboSettings amsettings;
+
+			memset(&amsettings, 0, sizeof(amsettings));
+
+			memcpy(amsettings.mii, &AmiiboFilePlain[0x4C], sizeof(amsettings.mii));
+			memcpy(amsettings.nickname, &AmiiboFilePlain[0x38], 4*5);  //amiibo doesnt have the null terminator
+			amsettings.flags = AmiiboFilePlain[0x2C] & 0xF; //todo: we should only load some of these values if the unused flag bits are set correctly https://3dbrew.org/wiki/Amiibo
+			amsettings.countrycodeid = AmiiboFilePlain[0x2D];
+
+			amsettings.setupdate_year = AMIIBO_YEAR_FROM_DATE(AmiiboFilePlain[0x30]);
+			amsettings.setupdate_month = AMIIBO_MONTH_FROM_DATE(AmiiboFilePlain[0x30]);
+			amsettings.setupdate_day = AMIIBO_DAY_FROM_DATE(AmiiboFilePlain[0x30]);
+
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 44, 0);
 			cmdbuf[1] = 0;
-            memcpy(&cmdbuf[2], &settings, sizeof(settings));
+            memcpy(&cmdbuf[2], &amsettings, sizeof(amsettings));
 			break;
 		}
 		case 0x18: { // 	GetAmiiboConfig
-			NFC_AmiiboConfig  config;
+
+			NFC_AmiiboConfig amconfig;
+			memset(&amconfig, 0, sizeof(amconfig));
+
+			amconfig.lastwritedate_year = AMIIBO_YEAR_FROM_DATE(AmiiboFilePlain[0x32]);
+			amconfig.lastwritedate_month = AMIIBO_MONTH_FROM_DATE(AmiiboFilePlain[0x32]);
+			amconfig.lastwritedate_day = AMIIBO_DAY_FROM_DATE(AmiiboFilePlain[0x32]);
+
+			amconfig.write_counter = (AmiiboFilePlain[0xB4] << 8) | AmiiboFilePlain[0xB5];
+			amconfig.characterID[0] = AmiiboFilePlain[0x1DC];
+			amconfig.characterID[1] = AmiiboFilePlain[0x1DD];
+			amconfig.characterID[2] = AmiiboFilePlain[0x1DE];
+			amconfig.series =  AmiiboFilePlain[0x1e2];
+			amconfig.amiiboID = (AmiiboFilePlain[0x1e0] << 8) | AmiiboFilePlain[0x1e1];
+			amconfig.type = AmiiboFilePlain[0x1DF];
+			amconfig.pagex4_byte3 = AmiiboFilePlain[0x2B]; //raw page 0x4 byte 0x3, dec byte
+			amconfig.appdata_size = 0xD8;
+
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 18, 0);
 			cmdbuf[1] = 0;
-            memcpy(&cmdbuf[2], &config, sizeof(config));
+            memcpy(&cmdbuf[2], &amconfig, sizeof(amconfig));
 			break;
 		}
 		case 0x402: { // 	unknown nfc:m method
@@ -234,8 +313,6 @@ static Result should_terminate(int *term_request) {
 	return 0;
 }
 
-Result fsinitValue;
-
 // this is called before main
 void __appInit() {
 	srvSysInit();
@@ -271,35 +348,7 @@ void __ctru_exit(int rc) {
 	svcExitProcess();
 }
 
-
-void testLog() {
-	logStr("test message v2");
-}
-
-void doDraw() {
-	svcKernelSetState(0x10000, 1);
-	//svcSleepThread(2000000000);
-	Draw_SetupFramebuffer();
-
-	Draw_Lock();
-	Draw_ClearFramebuffer();
-	Draw_FlushFramebuffer();
-
-	testLog();
-
-	char data[2014];
-
-	sprintf(data, "0x%08x", (unsigned int)fsinitValue);
-	Draw_DrawString(10, 10, COLOR_TITLE, data);//"Hello world1\n");
-	//svcSleepThread(2000000000);
-	waitInputWithTimeout(10 * 1000);
-
-	Draw_RestoreFramebuffer();
-	Draw_Unlock();
-	svcKernelSetState(0x10000, 1);
-}
-
-void showString(const char *str, int value) {
+static void showString(const char *str, u32 value) {
 	svcKernelSetState(0x10000, 1);
 
 	Draw_SetupFramebuffer();
@@ -309,7 +358,7 @@ void showString(const char *str, int value) {
 
 	char buf[2048];
 
-	sprintf(buf, "%s  %x", str, value);
+	sprintf(buf, "%s  0x%08x", str, (unsigned int)value);
 
 	Draw_DrawString(10, 10, COLOR_TITLE, buf);
 	u32 key = waitInputWithTimeout(10 * 1000);
@@ -322,7 +371,47 @@ void showString(const char *str, int value) {
 	svcKernelSetState(0x10000, 1);
 }
 
+static int loadFile(const char *filename, u8 *data, int len) {
+	IFile file;
+
+    Result res = IFile_Open(&file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, filename), FS_OPEN_READ);
+    if (R_FAILED(res)) {
+		return 0;
+    }
+
+    u64 size;
+
+    res = IFile_GetSize(&file, &size);
+    if (R_FAILED(res)) goto loadFile_err;
+
+    if (size < len)
+		len = size;
+
+	res = IFile_Read(&file, &size, data, len);
+	if (R_FAILED(res)) goto loadFile_err;
+
+	IFile_Close(&file);
+	return size;
+loadFile_err:
+	IFile_Close(&file);
+	return 0;
+}
+
+
 int main() {
+	if (loadFile("/Fox.bin", AmiiboFileRaw, AMIIBO_MAX_SIZE)<=540) {
+		showString("Failed to read amiibo dump", 0);
+	}
+
+	u8 key[160];
+	if (loadFile("/amiibo_keys.bin", key, sizeof(key))!=160) {
+		showString("Failed to read amiibo key", 0);
+	} else {
+		amitool_setKeys(key, 160);
+		if (!amitool_unpack(AmiiboFileRaw, AMIIBO_MAX_SIZE, AmiiboFilePlain, AMIIBO_MAX_SIZE))
+			showString("Failed to decrypt amiibo", 0);
+	}
+
 	int g_active_handles;
 
 	Result ret = 0;
@@ -380,8 +469,7 @@ int main() {
 
 		// process responses
 		reply_target = 0;
-		switch (request_index)
-		{
+		switch (request_index) {
 			case 0: { // notification
 				if (R_FAILED(should_terminate(&term_request))) {
 					svcBreak(USERBREAK_ASSERT);

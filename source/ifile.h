@@ -30,8 +30,7 @@
 
 #define PATH_MAX 255
 
-typedef struct
-{
+typedef struct {
     Handle handle;
     u64 pos;
     u64 size;
@@ -42,3 +41,5 @@ Result IFile_Close(IFile *file);
 Result IFile_GetSize(IFile *file, u64 *size);
 Result IFile_Read(IFile *file, u64 *total, void *buffer, u32 len);
 Result IFile_Write(IFile *file, u64 *total, const void *buffer, u32 len, u32 flags);
+Result IFile_Seek(IFile *file, u64 pos);
+Result IFile_Truncate(IFile *file);

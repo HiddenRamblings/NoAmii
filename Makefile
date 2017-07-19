@@ -19,9 +19,9 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source
+SOURCES		:=	amitool amitool/mbedtls source
 DATA		:=	data
-INCLUDES	:=	include
+INCLUDES	:=	include amitool/include
 FINAL_CXI   :=  0004013000004002.cxi
 
 #---------------------------------------------------------------------------------

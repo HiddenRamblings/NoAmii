@@ -122,4 +122,4 @@ AccessControlInfo:
 SystemControlInfo:
   SaveDataSize: 0KB # It doesn't use any save data.
   RemasterVersion: 0
-  StackSize: 0x1000
+  StackSize: 0x2000

@@ -28,15 +28,15 @@ void logInit() {
     logger_started = 1;
 }
 
+static char buffer[4096];
+
 void logPrintf(const char *format, ...) {
     va_list args;
     va_start(args, format);
 
-    static char buffer[4096];
+	vsnprintf(buffer, 4095, format, args);
 
-	vsprintf(buffer, format, args);
-
-    logStr(buffer);
+	logStr(buffer);
 
     va_end(args);
 }
@@ -59,7 +59,7 @@ void logBuf(char *prefix, u8* data, size_t len) {
 			bufstr[pos*3+2] = '\n';
 		}
 	}
-	printf("%s hex: %s\n", prefix, bufstr);
+	logPrintf("%s hex: %s\n", prefix, bufstr);
 }
 
 void logExit() {
