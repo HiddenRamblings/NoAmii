@@ -100,7 +100,6 @@ static void handle_commands(void) {
 	logState(cmdid, state);
 	logPrintf("cmd %08x\tstate %d\n", cmdid, state);
 	showString("cmd", cmdid);
-	showString("cmd", cmdcache[0]);
 
 	switch (cmdid) {
 		case 0x1: { //initialise
@@ -193,13 +192,8 @@ static void handle_commands(void) {
             break;
 		}
 		case 0x13: { //OpenAppData
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
-
-			if (cmdcache[0] != IPC_MakeHeader(0x13, 1, 0))
-				logPrintf("Command mismatch %x\n", cmdcache[0]);
-			else
-				logPrintf("Cmd match OpenAppData %x\n", cmdcache[0]);
 			u32 appid = cmdcache[1];
+
 			logPrintf("openappdata id %x transalted %x\n", appid, BSWAP_U32(appid));
 
 			appid = BSWAP_U32(appid);
@@ -207,28 +201,34 @@ static void handle_commands(void) {
 			//todo: Amiibosettings_byte0 bit5 must be set, and the byteswapped amiibo_appID in amiibosettings must match the input appID
 			if (memcmp(&appid, &AmiiboFilePlain[0xB6], sizeof(appid))) {
 				logStr("appid does NOT match");
+				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 				cmdbuf[1] = 0xC8A17638;
 			} else {
+				logStr("appid match");
+				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 				cmdbuf[1] = 0;
 			}
 			break;
 		}
 		case 0x15: { //ReadAppData
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 2);
+			logPrintf("readappdata bufsize %x\n", cmdcache[1]);
+			if (cmdcache[1] < 0xD8) {
+				showString("size too small", cmdcache[1]);
+			} else {
+				showString("size", cmdcache[1]);
+			}
+
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
 			cmdbuf[2]=IPC_Desc_StaticBuffer(0xD8,0);
 			//the buffer must exist outside of the function scope as it must survive till the svcReceiveReply is called
 			cmdbuf[3]=(u32)&AmiiboFilePlain[0xDC];
 
-			if (cmdcache[1] < 0xD8) {
-				logStr("Buffer too small");
-			}
 
 			//todo: validate buffer size
 
 			//u32 * staticbufs = getThreadStaticBuffers();
 
-			//logPrintf("readappdata bufsize %x\n", staticbufs[0]);
             break;
 		}
 		case 0x17: { // 	GetAmiiboSettings
