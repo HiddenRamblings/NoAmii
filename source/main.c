@@ -20,7 +20,7 @@
 #define BSWAP_U32(num) ((num>>24)&0xff) | ((num<<8)&0xff0000) | ((num>>8)&0xff00) | ((num<<24)&0xff000000)
 
 
-static void showString(const char *str, u32 value);
+static bool showString(const char *str, u32 value);
 
 
 typedef enum {
@@ -88,6 +88,8 @@ static void logState(int cmd, SCANNER_STATE state) {
 	}
 }
 
+static bool cmd13 = false;
+
 static void handle_commands(void) {
 	u32* cmdbuf = getThreadCommandBuffer();
 	u16 cmdid = cmdbuf[0] >> 16;
@@ -95,12 +97,11 @@ static void handle_commands(void) {
 	//we need to preserve the command buffer for reading any parameter values as any
 	//service calls (such as IFILE_Write) will clobber it.
 	u32 cmdcache[10];
-	memcpy(cmdcache, cmdbuf, sizeof(cmdcache));
+	memcpy(cmdcache, cmdbuf, 4*2);
 
 	logState(cmdid, state);
-	logPrintf("cmd %08x\tstate %d\n", cmdid, state);
-	showString("cmd", cmdid);
-
+	//showString("cmd", cmdbuf[0]);
+	cmd13 = 0;
 	switch (cmdid) {
 		case 0x1: { //initialise
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
@@ -144,20 +145,37 @@ static void handle_commands(void) {
 			state = AS_DATA_LOADED;
 			break;
 		}
+		case 0x08: { //ResetTagScanState
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
+			state = AS_SCAN_STARTED;
+			break;
+		}
 		case 0xd: { //GetTagState
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
 
 			// 3- TAG_IN_RANGE, 4-TAG_OUT_OF_RANEG,5-tag data loaded (after LoadAmiiboData)
-			if (state == AS_SCAN_STARTED || state == AS_IN_RANGE) {
-				cmdbuf[2] = 0x03;
-				state = AS_IN_RANGE;
-			} else if (state == AS_DATA_LOADED) {
-				cmdbuf[2] = 0x05;
-			} if (state == AS_OUT_OF_RANGE) {
-				cmdbuf[2] = 0x03;
-			} else {
-				cmdbuf[2] = 0x03;
+			switch (state) {
+				case AS_SCAN_STARTED:
+					cmdbuf[2] = NFC_TagState_Scanning;
+					if (showString("amiibo?", 0))
+						state = AS_IN_RANGE;
+					else
+						state = AS_SCAN_STARTED;
+					break;
+				case AS_IN_RANGE:
+					cmdbuf[2] = NFC_TagState_InRange;
+					break;
+				case AS_DATA_LOADED:
+					cmdbuf[2] = NFC_TagState_DataReady;
+					break;
+				case AS_OUT_OF_RANGE:
+					cmdbuf[2] = NFC_TagState_OutOfRange;
+					break;
+				default:
+					cmdbuf[2] = NFC_TagState_ScanningStopped;
+					break;
 			}
 			break;
 		}
@@ -180,7 +198,7 @@ static void handle_commands(void) {
 			taginfo.id[5] = AmiiboFileRaw[6];
 			taginfo.id[6] = AmiiboFileRaw[7];
 
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 13, 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(taginfo)/4)+1, 0);
 			cmdbuf[1] = 0;
             memcpy(&cmdbuf[2], &taginfo, sizeof(taginfo));
             break;
@@ -192,6 +210,11 @@ static void handle_commands(void) {
             break;
 		}
 		case 0x13: { //OpenAppData
+			showString("0x13", 0);
+			cmd13 = 1;
+				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+				cmdbuf[1] = 0;
+			/*
 			u32 appid = cmdcache[1];
 
 			logPrintf("openappdata id %x transalted %x\n", appid, BSWAP_U32(appid));
@@ -200,34 +223,32 @@ static void handle_commands(void) {
 
 			//todo: Amiibosettings_byte0 bit5 must be set, and the byteswapped amiibo_appID in amiibosettings must match the input appID
 			if (memcmp(&appid, &AmiiboFilePlain[0xB6], sizeof(appid))) {
-				logStr("appid does NOT match");
+				logStr("appid does NOT match\n");
 				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 				cmdbuf[1] = 0xC8A17638;
 			} else {
-				logStr("appid match");
+				logStr("appid match\n");
 				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 				cmdbuf[1] = 0;
 			}
+			showString("app id ", appid);*/
+			showString("   0x13", 1);
+			showString("  0x0013", 1);
 			break;
 		}
 		case 0x15: { //ReadAppData
-			logPrintf("readappdata bufsize %x\n", cmdcache[1]);
-			if (cmdcache[1] < 0xD8) {
-				showString("size too small", cmdcache[1]);
-			} else {
-				showString("size", cmdcache[1]);
-			}
+			//logPrintf("readappdata bufsize %x\n", cmdcache[1]);
+			//if (cmdcache[1] < 0xD8) {
+			//	showString("size too small\n", cmdcache[1]);
+			//} else {
+			//	showString("size\n", cmdcache[1]);
+			//}
 
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 2);
 			cmdbuf[1] = 0;
 			cmdbuf[2]=IPC_Desc_StaticBuffer(0xD8,0);
 			//the buffer must exist outside of the function scope as it must survive till the svcReceiveReply is called
 			cmdbuf[3]=(u32)&AmiiboFilePlain[0xDC];
-
-
-			//todo: validate buffer size
-
-			//u32 * staticbufs = getThreadStaticBuffers();
 
             break;
 		}
@@ -245,7 +266,7 @@ static void handle_commands(void) {
 			amsettings.setupdate_month = AMIIBO_MONTH_FROM_DATE(AmiiboFilePlain[0x30]);
 			amsettings.setupdate_day = AMIIBO_DAY_FROM_DATE(AmiiboFilePlain[0x30]);
 
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 44, 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(amsettings)/4)+1, 0);
 			cmdbuf[1] = 0;
             memcpy(&cmdbuf[2], &amsettings, sizeof(amsettings));
 			break;
@@ -269,20 +290,31 @@ static void handle_commands(void) {
 			amconfig.pagex4_byte3 = AmiiboFilePlain[0x2B]; //raw page 0x4 byte 0x3, dec byte
 			amconfig.appdata_size = 0xD8;
 
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 18, 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(amconfig)/4)+1, 0);
 			cmdbuf[1] = 0;
             memcpy(&cmdbuf[2], &amconfig, sizeof(amconfig));
+			break;
+		}
+		case 0x401: { //gets called to write data when resetting an amiibo
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
+			break;
+		}
+		case 0x9: { //UpdateStoredAmiiboData gets called to register owner and nickname
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
 			break;
 		}
 		case 0x402: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 17, 0);
 			cmdbuf[1] = 0;
-            memset(&cmdbuf[2], 0, 16);
+            memset(&cmdbuf[2], 0, 16*4); //wrong size
 			break;
 		}
 		case 0x404: { // 	SetAmiiboSettings
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
+			break;
 		}
 		case 0x407: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
@@ -293,8 +325,12 @@ static void handle_commands(void) {
 		}
 
 		default: {// error
-			cmdbuf[0] = 0x40;
-			cmdbuf[1] = 0xD900183F;
+			//logStr("NOT IMPLEMENTED\n");
+			showString("NOT IMPLEMENTED\n", cmdcache[0]);
+			//cmdbuf[0] = 0x40;
+			//cmdbuf[1] = 0xD900183F;
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
 			break;
 		}
 	}
@@ -348,7 +384,7 @@ void __ctru_exit(int rc) {
 	svcExitProcess();
 }
 
-static void showString(const char *str, u32 value) {
+static bool showString(const char *str, u32 value) {
 	svcKernelSetState(0x10000, 1);
 
 	Draw_SetupFramebuffer();
@@ -369,6 +405,8 @@ static void showString(const char *str, u32 value) {
 	Draw_RestoreFramebuffer();
 	Draw_Unlock();
 	svcKernelSetState(0x10000, 1);
+
+	return key & BUTTON_UP;
 }
 
 static int loadFile(const char *filename, u8 *data, int len) {
