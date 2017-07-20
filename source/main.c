@@ -22,6 +22,18 @@
 
 static bool showString(const char *str, u32 value);
 
+void showBuf(char *prefix, u8* data, size_t len) {
+	char bufstr[len*3 + 3];
+	memset(bufstr, 0, sizeof(bufstr));
+	for(int pos=0; pos<len; pos++) {
+		snprintf(&bufstr[pos*3], 4, "%02x ", data[pos]);
+		if (pos > 0 && pos % 12 == 0) {
+			bufstr[pos*3+2] = '\n';
+		}
+	}
+	showString(bufstr, 0);
+}
+
 
 typedef enum {
 	AS_NOT_INITIALISED, AS_INITIALISED, AS_COMMS_STARTED, AS_SCAN_STARTED, AS_IN_RANGE, AS_DATA_LOADED, AS_OUT_OF_RANGE,AS_STOP_SCAN
@@ -88,8 +100,6 @@ static void logState(int cmd, SCANNER_STATE state) {
 	}
 }
 
-static bool cmd13 = false;
-
 static void handle_commands(void) {
 	u32* cmdbuf = getThreadCommandBuffer();
 	u16 cmdid = cmdbuf[0] >> 16;
@@ -99,9 +109,8 @@ static void handle_commands(void) {
 	u32 cmdcache[10];
 	memcpy(cmdcache, cmdbuf, 4*2);
 
-	logState(cmdid, state);
-	//showString("cmd", cmdbuf[0]);
-	cmd13 = 0;
+	//logState(cmdid, state);
+	showString("cmd", cmdbuf[0]);
 	switch (cmdid) {
 		case 0x1: { //initialise
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
@@ -210,30 +219,27 @@ static void handle_commands(void) {
             break;
 		}
 		case 0x13: { //OpenAppData
-			showString("0x13", 0);
-			cmd13 = 1;
-				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
-				cmdbuf[1] = 0;
-			/*
+
 			u32 appid = cmdcache[1];
-
-			logPrintf("openappdata id %x transalted %x\n", appid, BSWAP_U32(appid));
-
 			appid = BSWAP_U32(appid);
 
-			//todo: Amiibosettings_byte0 bit5 must be set, and the byteswapped amiibo_appID in amiibosettings must match the input appID
 			if (memcmp(&appid, &AmiiboFilePlain[0xB6], sizeof(appid))) {
-				logStr("appid does NOT match\n");
+				showString("> 0x13 ", 1);
 				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
-				cmdbuf[1] = 0xC8A17638;
-			} else {
-				logStr("appid match\n");
-				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
-				cmdbuf[1] = 0;
+				cmdbuf[1] = 0xC8A17638; //app id mismatch
+				break;
 			}
-			showString("app id ", appid);*/
-			showString("   0x13", 1);
-			showString("  0x0013", 1);
+
+			if (!(AmiiboFilePlain[0x2C] & 0x20)) {
+				showString("> 0x13 ", 2);
+				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+				cmdbuf[1] = 0xC8A17620; //uninitialised
+				break;
+			}
+
+			showString("> 0x13 ", 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
 			break;
 		}
 		case 0x15: { //ReadAppData
@@ -257,17 +263,23 @@ static void handle_commands(void) {
 
 			memset(&amsettings, 0, sizeof(amsettings));
 
-			memcpy(amsettings.mii, &AmiiboFilePlain[0x4C], sizeof(amsettings.mii));
-			memcpy(amsettings.nickname, &AmiiboFilePlain[0x38], 4*5);  //amiibo doesnt have the null terminator
-			amsettings.flags = AmiiboFilePlain[0x2C] & 0xF; //todo: we should only load some of these values if the unused flag bits are set correctly https://3dbrew.org/wiki/Amiibo
-			amsettings.countrycodeid = AmiiboFilePlain[0x2D];
-
-			amsettings.setupdate_year = AMIIBO_YEAR_FROM_DATE(AmiiboFilePlain[0x30]);
-			amsettings.setupdate_month = AMIIBO_MONTH_FROM_DATE(AmiiboFilePlain[0x30]);
-			amsettings.setupdate_day = AMIIBO_DAY_FROM_DATE(AmiiboFilePlain[0x30]);
-
 			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(amsettings)/4)+1, 0);
-			cmdbuf[1] = 0;
+			if (!(AmiiboFilePlain[0x2C] & 0x10)) {
+				showString("getsettings", 0);
+				cmdbuf[1] = 0xC8A17628; //uninitialised
+			} else {
+				showString("getsettings", 1);
+				cmdbuf[1] = 0;
+				memcpy(amsettings.mii, &AmiiboFilePlain[0x4C], sizeof(amsettings.mii));
+				memcpy(amsettings.nickname, &AmiiboFilePlain[0x38], 4*5);  //amiibo doesnt have the null terminator
+				amsettings.flags = AmiiboFilePlain[0x2C] & 0xF; //todo: we should only load some of these values if the unused flag bits are set correctly https://3dbrew.org/wiki/Amiibo
+				amsettings.countrycodeid = AmiiboFilePlain[0x2D];
+
+				amsettings.setupdate_year = AMIIBO_YEAR_FROM_DATE(AmiiboFilePlain[0x30]);
+				amsettings.setupdate_month = AMIIBO_MONTH_FROM_DATE(AmiiboFilePlain[0x30]);
+				amsettings.setupdate_day = AMIIBO_DAY_FROM_DATE(AmiiboFilePlain[0x30]);
+			}
+
             memcpy(&cmdbuf[2], &amsettings, sizeof(amsettings));
 			break;
 		}
@@ -309,18 +321,45 @@ static void handle_commands(void) {
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 17, 0);
 			cmdbuf[1] = 0;
             memset(&cmdbuf[2], 0, 16*4); //wrong size
+
 			break;
 		}
 		case 0x404: { // 	SetAmiiboSettings
+			NFC_AmiiboSettings amsettings;
+			memcpy(&amsettings, &cmdbuf[1], 41 * 4);
+
+			memcpy(&AmiiboFilePlain[0x4C], amsettings.mii, sizeof(amsettings.mii));
+			memcpy(&AmiiboFilePlain[0x38], amsettings.nickname, 4*5);
+
+
+			AmiiboFilePlain[0x2C] = ((AmiiboFilePlain[0x2C] & 0xF0) | (amsettings.flags & 0xF) | 0x10); //merge the flags with settings set flag
+			/*
+			todo: set the setup date (inverse of this:)
+				amsettings.setupdate_year = AMIIBO_YEAR_FROM_DATE(AmiiboFilePlain[0x30]);
+				amsettings.setupdate_month = AMIIBO_MONTH_FROM_DATE(AmiiboFilePlain[0x30]);
+				amsettings.setupdate_day = AMIIBO_DAY_FROM_DATE(AmiiboFilePlain[0x30]);
+				*/
+			//AmiiboFilePlain[0x2D] = how to find the country code?
+
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
+			state = AS_OUT_OF_RANGE;
+			if (showString("remove2?", 0))
+				state = AS_IN_RANGE;
+			else
+				state = AS_OUT_OF_RANGE;
 			break;
 		}
 		case 0x407: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
 			cmdbuf[2] = 0;
-			state = AS_OUT_OF_RANGE;
+			if (showString("remove?", 0))
+				state = AS_IN_RANGE;
+			else
+				state = AS_OUT_OF_RANGE;
+
+			//state = AS_OUT_OF_RANGE;
 			break;
 		}
 
@@ -437,7 +476,10 @@ loadFile_err:
 
 
 int main() {
-	if (loadFile("/Fox.bin", AmiiboFileRaw, AMIIBO_MAX_SIZE)<=540) {
+	//char *file = "/amiibo/Zelda (SSB)_201706081138.bin";
+	char *file = "/Fox.bin";
+
+	if (loadFile(file , AmiiboFileRaw, AMIIBO_MAX_SIZE)<=540) {
 		showString("Failed to read amiibo dump", 0);
 	}
 
