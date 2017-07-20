@@ -26,6 +26,7 @@
 
 #include <3ds.h>
 #include "ifile.h"
+#include <string.h>
 
 Result IFile_Open(IFile *file, FS_ArchiveID archiveId, FS_Path archivePath, FS_Path filePath, u32 flags) {
 	Result res;
@@ -103,6 +104,10 @@ Result IFile_Read(IFile *file, u64 *total, void *buffer, u32 len) {
 }
 
 Result IFile_Write(IFile *file, u64 *total, const void *buffer, u32 len, u32 flags) {
+	u32 commandcache[8];
+	u32 *cmdbuf = getThreadCommandBuffer();
+	memcpy(commandcache, cmdbuf, sizeof(commandcache));
+
 	u32 written;
 	u32 left;
 	char *buf;
@@ -134,6 +139,8 @@ Result IFile_Write(IFile *file, u64 *total, const void *buffer, u32 len, u32 fla
 	}
 
 	*total = cur;
+
+	memcpy(cmdbuf, commandcache, sizeof(commandcache));
 	return res;
 }
 

@@ -100,17 +100,17 @@ static void logState(int cmd, SCANNER_STATE state) {
 	}
 }
 
+int counter = 0;
+
 static void handle_commands(void) {
 	u32* cmdbuf = getThreadCommandBuffer();
 	u16 cmdid = cmdbuf[0] >> 16;
 
 	//we need to preserve the command buffer for reading any parameter values as any
 	//service calls (such as IFILE_Write) will clobber it.
-	u32 cmdcache[10];
-	memcpy(cmdcache, cmdbuf, 4*2);
 
-	//logState(cmdid, state);
-	showString("cmd", cmdbuf[0]);
+	logState(cmdid, state);
+	//showString("cmd", cmdbuf[0]);
 	switch (cmdid) {
 		case 0x1: { //initialise
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
@@ -160,9 +160,17 @@ static void handle_commands(void) {
 			state = AS_SCAN_STARTED;
 			break;
 		}
+		case 0x9: { //UpdateStoredAmiiboData gets called to register owner and nickname
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
+			break;
+		}
 		case 0xd: { //GetTagState
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
+
+			counter --;
+
 
 			// 3- TAG_IN_RANGE, 4-TAG_OUT_OF_RANEG,5-tag data loaded (after LoadAmiiboData)
 			switch (state) {
@@ -175,9 +183,23 @@ static void handle_commands(void) {
 					break;
 				case AS_IN_RANGE:
 					cmdbuf[2] = NFC_TagState_InRange;
+					counter --;
+					if (counter < 0)
+					{
+						if (showString("remove amiibo?", 0))
+							state = AS_OUT_OF_RANGE;
+						counter = 10;
+					}
 					break;
 				case AS_DATA_LOADED:
 					cmdbuf[2] = NFC_TagState_DataReady;
+					counter --;
+					if (counter < 0)
+					{
+						if (showString("remove amiibo?", 0))
+							state = AS_OUT_OF_RANGE;
+						counter = 10;
+					}
 					break;
 				case AS_OUT_OF_RANGE:
 					cmdbuf[2] = NFC_TagState_OutOfRange;
@@ -220,7 +242,7 @@ static void handle_commands(void) {
 		}
 		case 0x13: { //OpenAppData
 
-			u32 appid = cmdcache[1];
+			u32 appid = cmdbuf[1];
 			appid = BSWAP_U32(appid);
 
 			if (memcmp(&appid, &AmiiboFilePlain[0xB6], sizeof(appid))) {
@@ -265,10 +287,8 @@ static void handle_commands(void) {
 
 			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(amsettings)/4)+1, 0);
 			if (!(AmiiboFilePlain[0x2C] & 0x10)) {
-				showString("getsettings", 0);
 				cmdbuf[1] = 0xC8A17628; //uninitialised
 			} else {
-				showString("getsettings", 1);
 				cmdbuf[1] = 0;
 				memcpy(amsettings.mii, &AmiiboFilePlain[0x4C], sizeof(amsettings.mii));
 				memcpy(amsettings.nickname, &AmiiboFilePlain[0x38], 4*5);  //amiibo doesnt have the null terminator
@@ -312,11 +332,6 @@ static void handle_commands(void) {
 			cmdbuf[1] = 0;
 			break;
 		}
-		case 0x9: { //UpdateStoredAmiiboData gets called to register owner and nickname
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
-			cmdbuf[1] = 0;
-			break;
-		}
 		case 0x402: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 17, 0);
 			cmdbuf[1] = 0;
@@ -343,21 +358,18 @@ static void handle_commands(void) {
 
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
-			state = AS_OUT_OF_RANGE;
-			if (showString("remove2?", 0))
-				state = AS_IN_RANGE;
-			else
-				state = AS_OUT_OF_RANGE;
 			break;
 		}
 		case 0x407: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
 			cmdbuf[2] = 0;
+			/*
 			if (showString("remove?", 0))
 				state = AS_IN_RANGE;
 			else
 				state = AS_OUT_OF_RANGE;
+				*/
 
 			//state = AS_OUT_OF_RANGE;
 			break;
@@ -365,7 +377,7 @@ static void handle_commands(void) {
 
 		default: {// error
 			//logStr("NOT IMPLEMENTED\n");
-			showString("NOT IMPLEMENTED\n", cmdcache[0]);
+			showString("NOT IMPLEMENTED\n", cmdbuf[0]);
 			//cmdbuf[0] = 0x40;
 			//cmdbuf[1] = 0xD900183F;
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
