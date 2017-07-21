@@ -100,8 +100,6 @@ static void logState(int cmd, SCANNER_STATE state) {
 	}
 }
 
-int counter = 0;
-
 static void handle_commands(void) {
 	u32* cmdbuf = getThreadCommandBuffer();
 	u16 cmdid = cmdbuf[0] >> 16;
@@ -111,11 +109,13 @@ static void handle_commands(void) {
 
 	logState(cmdid, state);
 	//showString("cmd", cmdbuf[0]);
+	static int stateCheckCounter = 10;
 	switch (cmdid) {
 		case 0x1: { //initialise
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
 			state = AS_INITIALISED;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x2: { //shutdown
@@ -128,18 +128,21 @@ static void handle_commands(void) {
 			cmdbuf[0] = 0x30040;
 			cmdbuf[1] = 0;
 			state = AS_COMMS_STARTED;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x4: { //StopCommunication
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
 			state = AS_INITIALISED;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x5: { //StartTagScanning
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
 			state = AS_SCAN_STARTED;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x6: { //StopTagScanning
@@ -158,6 +161,7 @@ static void handle_commands(void) {
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
 			state = AS_SCAN_STARTED;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x9: { //UpdateStoredAmiiboData gets called to register owner and nickname
@@ -169,36 +173,34 @@ static void handle_commands(void) {
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
 
-			counter --;
-
-
 			// 3- TAG_IN_RANGE, 4-TAG_OUT_OF_RANEG,5-tag data loaded (after LoadAmiiboData)
 			switch (state) {
 				case AS_SCAN_STARTED:
 					cmdbuf[2] = NFC_TagState_Scanning;
-					if (showString("amiibo?", 0))
+					stateCheckCounter --;
+					if (stateCheckCounter <0 && showString("place amiibo?", 0))
 						state = AS_IN_RANGE;
 					else
 						state = AS_SCAN_STARTED;
 					break;
 				case AS_IN_RANGE:
 					cmdbuf[2] = NFC_TagState_InRange;
-					counter --;
-					if (counter < 0)
+					stateCheckCounter --;
+					if (stateCheckCounter <0 && showString("remove amiibo?", 0))
 					{
-						if (showString("remove amiibo?", 0))
-							state = AS_OUT_OF_RANGE;
-						counter = 10;
+						showString("Removing amiibo..", 1);
+						state = AS_OUT_OF_RANGE;
+						stateCheckCounter = 10;
 					}
 					break;
 				case AS_DATA_LOADED:
 					cmdbuf[2] = NFC_TagState_DataReady;
-					counter --;
-					if (counter < 0)
+					stateCheckCounter --;
+					if (stateCheckCounter < 0 && showString("remove amiibo?", 0))
 					{
-						if (showString("remove amiibo?", 0))
-							state = AS_OUT_OF_RANGE;
-						counter = 10;
+						showString("Removing amiibo..", 2);
+						state = AS_OUT_OF_RANGE;
+						stateCheckCounter = 10;
 					}
 					break;
 				case AS_OUT_OF_RANGE:
@@ -232,6 +234,7 @@ static void handle_commands(void) {
 			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(taginfo)/4)+1, 0);
 			cmdbuf[1] = 0;
             memcpy(&cmdbuf[2], &taginfo, sizeof(taginfo));
+			stateCheckCounter = 10;
             break;
 		}
 		case 0x12: { //CommunicationGetResult
@@ -262,6 +265,7 @@ static void handle_commands(void) {
 			showString("> 0x13 ", 0);
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x15: { //ReadAppData
@@ -278,6 +282,7 @@ static void handle_commands(void) {
 			//the buffer must exist outside of the function scope as it must survive till the svcReceiveReply is called
 			cmdbuf[3]=(u32)&AmiiboFilePlain[0xDC];
 
+			stateCheckCounter = 10;
             break;
 		}
 		case 0x17: { // 	GetAmiiboSettings
@@ -301,6 +306,7 @@ static void handle_commands(void) {
 			}
 
             memcpy(&cmdbuf[2], &amsettings, sizeof(amsettings));
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x18: { // 	GetAmiiboConfig
@@ -325,11 +331,22 @@ static void handle_commands(void) {
 			cmdbuf[0] = IPC_MakeHeader(cmdid, (sizeof(amconfig)/4)+1, 0);
 			cmdbuf[1] = 0;
             memcpy(&cmdbuf[2], &amconfig, sizeof(amconfig));
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x401: { //gets called to write data when resetting an amiibo
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
+
+			//we ignore the paremeters to this command and just clear the data
+			//todo: figure out the parameters of the native service?
+
+			//todo: just clearing the data flag for now. should clear the settings and appdata sections.
+			AmiiboFilePlain[0x2C] = 0x0;
+
+
+
+			//logBuf("0x401 command", &cmdbuf[1], 3 * 4);
 			break;
 		}
 		case 0x402: { // 	unknown nfc:m method
@@ -358,6 +375,7 @@ static void handle_commands(void) {
 
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
+			stateCheckCounter = 10;
 			break;
 		}
 		case 0x407: { // 	unknown nfc:m method
