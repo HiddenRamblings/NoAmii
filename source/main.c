@@ -186,21 +186,21 @@ static void handle_commands(void) {
 				case AS_IN_RANGE:
 					cmdbuf[2] = NFC_TagState_InRange;
 					stateCheckCounter --;
-					if (stateCheckCounter <0 && showString("remove amiibo?", 0))
+					//if (stateCheckCounter <0 && showString("remove amiibo?", 0))
 					{
-						showString("Removing amiibo..", 1);
-						state = AS_OUT_OF_RANGE;
-						stateCheckCounter = 10;
+						//showString("Removing amiibo..", 1);
+					//	state = AS_OUT_OF_RANGE;
+					//	stateCheckCounter = 10;
 					}
 					break;
 				case AS_DATA_LOADED:
 					cmdbuf[2] = NFC_TagState_DataReady;
 					stateCheckCounter --;
-					if (stateCheckCounter < 0 && showString("remove amiibo?", 0))
+					//if (stateCheckCounter < 0 && showString("remove amiibo?", 0))
 					{
-						showString("Removing amiibo..", 2);
-						state = AS_OUT_OF_RANGE;
-						stateCheckCounter = 10;
+						//showString("Removing amiibo..", 2);
+					//	state = AS_OUT_OF_RANGE;
+					//	stateCheckCounter = 10;
 					}
 					break;
 				case AS_OUT_OF_RANGE:
@@ -382,14 +382,6 @@ static void handle_commands(void) {
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
 			cmdbuf[2] = 0;
-			/*
-			if (showString("remove?", 0))
-				state = AS_IN_RANGE;
-			else
-				state = AS_OUT_OF_RANGE;
-				*/
-
-			//state = AS_OUT_OF_RANGE;
 			break;
 		}
 
@@ -507,7 +499,7 @@ loadFile_err:
 
 int main() {
 	//char *file = "/amiibo/Zelda (SSB)_201706081138.bin";
-	char *file = "/Fox.bin";
+	char *file = "/amiibodump.bin";
 
 	if (loadFile(file , AmiiboFileRaw, AMIIBO_MAX_SIZE)<=540) {
 		showString("Failed to read amiibo dump", 0);

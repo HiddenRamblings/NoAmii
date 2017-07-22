@@ -3,6 +3,10 @@
 
 static Handle fsuHandle;
 
+Handle fsSysGetSession() {
+	return fsuHandle;
+}
+
 Result fsSysInit() {
     //since the "srv" service is initalised by our srvsys.c methods, normal ctrulib init function cannot work directly
     //as they don't have access to the "srv" service handle

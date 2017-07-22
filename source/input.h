@@ -28,6 +28,11 @@
 
 #include <3ds.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 #define HID_PAD                (*(vu32 *)(0x10146000 -0x10100000 +0x1EC00000)^ 0xFFF)
 
 #define BUTTON_R1              (1 << 8)
@@ -54,3 +59,7 @@ u32 waitInputWithTimeout(u32 msec);
 u32 waitInput();
 u32 waitComboWithTimeout(u32 msec);
 u32 waitCombo();
+
+#ifdef __cplusplus
+}
+#endif

@@ -26,6 +26,11 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 #include <3ds/types.h>
 #include <3ds/gfx.h>
 //#include "utils.h"
@@ -83,3 +88,7 @@ u32 Draw_GetCurrentFramebufferAddress(bool top, bool left);
 
 void Draw_CreateBitmapHeader(u8 *dst, u32 width, u32 heigth);
 void Draw_ConvertFrameBufferLine(u8 *line, bool top, bool left, u32 y);
+
+#ifdef __cplusplus
+}
+#endif
