@@ -306,6 +306,7 @@ static void handle_commands(void) {
 			}
 
             memcpy(&cmdbuf[2], &amsettings, sizeof(amsettings));
+
 			stateCheckCounter = 10;
 			break;
 		}
@@ -352,7 +353,7 @@ static void handle_commands(void) {
 		case 0x402: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 17, 0);
 			cmdbuf[1] = 0;
-            memset(&cmdbuf[2], 0, 16*4); //wrong size
+            memset(&cmdbuf[2], 0, 16*4);
 
 			break;
 		}
@@ -453,11 +454,11 @@ static bool showString(const char *str, u32 value) {
 	Draw_ClearFramebuffer();
 	Draw_FlushFramebuffer();
 
-	char buf[2048];
+	//char buf[2048];
 
-	sprintf(buf, "%s  0x%08x", str, (unsigned int)value);
+	//sprintf(buf, "%s  0x%08x", str, (unsigned int)value);
 
-	Draw_DrawString(10, 10, COLOR_TITLE, buf);
+	Draw_DrawString(10, 10, COLOR_TITLE, str);
 	u32 key = waitInputWithTimeout(10 * 1000);
 	if (key & BUTTON_DOWN) {
 		svcBreak(USERBREAK_ASSERT);
@@ -514,35 +515,22 @@ void initDump() {
 	}
 }
 
-/*
 int main() {
 	initDump();
 
-	int res = 0;
-	Handle notificationHandle;
-
-	MyThread *nfuThread = nfuCreateThread();
-
-	if (R_FAILED(srvSysEnableNotification(hndNotification))) {
-		svcBreak(USERBREAK_ASSERT);
-	}
-}*/
-
-int main() {
-	initDump();
-	int g_active_handles;
-
-	Result ret = 0;
+	int nmbActiveHandles;
 
 	Handle *hndNfuU;
 	Handle *hndNfuM;
 	Handle *hndNotification;
+	Handle hndList[MAX_SESSIONS+SERVICE_ENDPOINTS];
 
-	Handle g_handles[MAX_SESSIONS+SERVICE_ENDPOINTS];
-	hndNotification = &g_handles[0];
-	hndNfuU = &g_handles[1];
-	hndNfuM = &g_handles[2];
-	g_active_handles = SERVICE_ENDPOINTS;
+	hndNotification = &hndList[0];
+	hndNfuU = &hndList[1];
+	hndNfuM = &hndList[2];
+	nmbActiveHandles = SERVICE_ENDPOINTS;
+
+	Result ret = 0;
 
 	if (R_FAILED(srvRegisterService(hndNfuU, "nfc:u", MAX_SESSIONS))) {
 		svcBreak(USERBREAK_ASSERT);
@@ -563,7 +551,7 @@ int main() {
 		}
 		s32 request_index;
 		logPrintf("B SRAR %d %x\n", request_index, reply_target);
-		ret = svcReplyAndReceive(&request_index, g_handles, g_active_handles, reply_target);
+		ret = svcReplyAndReceive(&request_index, hndList, nmbActiveHandles, reply_target);
 		logPrintf("A SRAR %d %x\n", request_index, reply_target);
 
 		if (R_FAILED(ret)) {
@@ -571,52 +559,51 @@ int main() {
 			if (ret == 0xC920181A) {
 				if (request_index == -1) {
 					for (int i = SERVICE_ENDPOINTS; i < MAX_SESSIONS+SERVICE_ENDPOINTS; i++) {
-						if (g_handles[i] == reply_target) {
+						if (hndList[i] == reply_target) {
 							request_index = i;
 							break;
 						}
 					}
 				}
-				svcCloseHandle(g_handles[request_index]);
-				g_handles[request_index] = g_handles[g_active_handles-1];
-				g_active_handles--;
+				svcCloseHandle(hndList[request_index]);
+				hndList[request_index] = hndList[nmbActiveHandles-1];
+				nmbActiveHandles--;
 				reply_target = 0;
 			} else {
 				svcBreak(USERBREAK_ASSERT);
 			}
-			continue;
-		}
-
-		// process responses
-		reply_target = 0;
-		switch (request_index) {
-			case 0: { // notification
-				if (R_FAILED(should_terminate(&term_request))) {
-					svcBreak(USERBREAK_ASSERT);
+		} else {
+			// process responses
+			reply_target = 0;
+			switch (request_index) {
+				case 0: { // notification
+					if (R_FAILED(should_terminate(&term_request))) {
+						svcBreak(USERBREAK_ASSERT);
+					}
+					break;
 				}
-				break;
-			}
-			case 1: // new session
-			case 2: {// new session
-				logPrintf("New Session %d\n", request_index);
-				Handle handle;
-				if (R_FAILED(svcAcceptSession(&handle, g_handles[request_index]))) {
-					svcBreak(USERBREAK_ASSERT);
+				case 1: // new session
+				case 2: {// new session
+					logPrintf("New Session %d\n", request_index);
+					Handle handle;
+					if (R_FAILED(svcAcceptSession(&handle, hndList[request_index]))) {
+						svcBreak(USERBREAK_ASSERT);
+					}
+					logPrintf("New Session accepted %x on index %d\n", handle, nmbActiveHandles);
+					if (nmbActiveHandles < MAX_SESSIONS+SERVICE_ENDPOINTS) {
+						hndList[nmbActiveHandles] = handle;
+						nmbActiveHandles++;
+					} else {
+						svcCloseHandle(handle);
+					}
+					break;
 				}
-				logPrintf("New Session accepted %x on index %d\n", handle, g_active_handles);
-				if (g_active_handles < MAX_SESSIONS+SERVICE_ENDPOINTS) {
-					g_handles[g_active_handles] = handle;
-					g_active_handles++;
-				} else {
-					svcCloseHandle(handle);
+				default: { // session
+					logPrintf("cmd handle %x\n", request_index);
+					handle_commands();
+					reply_target = hndList[request_index];
+					break;
 				}
-				break;
-			}
-			default: { // session
-				logPrintf("cmd handle %x\n", request_index);
-				handle_commands();
-				reply_target = g_handles[request_index];
-				break;
 			}
 		}
 	} while (!term_request);
