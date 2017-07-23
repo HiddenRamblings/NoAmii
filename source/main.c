@@ -2,9 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/iosupport.h>
-#include "srvsys.h"
+#include "services.h"
 #include "draw.h"
-#include "service.h"
 #include "logger.h"
 #include "input.h"
 #include "ifile.h"
@@ -244,9 +243,9 @@ static void handle_commands(void) {
             break;
 		}
 		case 0x13: { //OpenAppData
-
 			u32 appid = cmdbuf[1];
 			appid = BSWAP_U32(appid);
+			logPrintf("OpenAppData %x appid %x\n", cmdbuf[0], cmdbuf[1]);
 
 			if (memcmp(&appid, &AmiiboFilePlain[0xB6], sizeof(appid))) {
 				showString("> 0x13 ", 1);
@@ -262,13 +261,14 @@ static void handle_commands(void) {
 				break;
 			}
 
-			showString("> 0x13 ", 0);
+			//showString("> 0x13 ", 0);
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
 			stateCheckCounter = 10;
 			break;
 		}
 		case 0x15: { //ReadAppData
+			//showString("> 0x15 ", cmdbuf[1]);
 			//logPrintf("readappdata bufsize %x\n", cmdcache[1]);
 			//if (cmdcache[1] < 0xD8) {
 			//	showString("size too small\n", cmdcache[1]);
@@ -400,7 +400,7 @@ static void handle_commands(void) {
 static Result should_terminate(int *term_request) {
 	u32 notid;
 
-	Result ret = srvSysReceiveNotification(&notid);
+	Result ret = srvReceiveNotification(&notid);
 	if (R_FAILED(ret)) {
 		return ret;
 	}
@@ -420,7 +420,7 @@ void __appInit() {
 // this is called after main exits
 void __appExit() {
 	logExit();
-	fsSysExit();
+	fsExit();
 	srvSysExit();
 }
 
@@ -496,8 +496,7 @@ loadFile_err:
 	return 0;
 }
 
-
-int main() {
+void initDump() {
 	//char *file = "/amiibo/Zelda (SSB)_201706081138.bin";
 	char *file = "/amiibodump.bin";
 
@@ -513,7 +512,24 @@ int main() {
 		if (!amitool_unpack(AmiiboFileRaw, AMIIBO_MAX_SIZE, AmiiboFilePlain, AMIIBO_MAX_SIZE))
 			showString("Failed to decrypt amiibo", 0);
 	}
+}
 
+/*
+int main() {
+	initDump();
+
+	int res = 0;
+	Handle notificationHandle;
+
+	MyThread *nfuThread = nfuCreateThread();
+
+	if (R_FAILED(srvSysEnableNotification(hndNotification))) {
+		svcBreak(USERBREAK_ASSERT);
+	}
+}*/
+
+int main() {
+	initDump();
 	int g_active_handles;
 
 	Result ret = 0;
@@ -528,13 +544,13 @@ int main() {
 	hndNfuM = &g_handles[2];
 	g_active_handles = SERVICE_ENDPOINTS;
 
-	if (R_FAILED(srvSysRegisterService(hndNfuU, "nfc:u", MAX_SESSIONS))) {
+	if (R_FAILED(srvRegisterService(hndNfuU, "nfc:u", MAX_SESSIONS))) {
 		svcBreak(USERBREAK_ASSERT);
 	}
-	if (R_FAILED(srvSysRegisterService(hndNfuM, "nfc:m", MAX_SESSIONS))) {
+	if (R_FAILED(srvRegisterService(hndNfuM, "nfc:m", MAX_SESSIONS))) {
 		svcBreak(USERBREAK_ASSERT);
 	}
-	if (R_FAILED(srvSysEnableNotification(hndNotification))) {
+	if (R_FAILED(srvEnableNotification(hndNotification))) {
 		svcBreak(USERBREAK_ASSERT);
 	}
 
@@ -546,13 +562,15 @@ int main() {
 			cmdbuf[0] = 0xFFFF0000;
 		}
 		s32 request_index;
+		logPrintf("B SRAR %d %x\n", request_index, reply_target);
 		ret = svcReplyAndReceive(&request_index, g_handles, g_active_handles, reply_target);
+		logPrintf("A SRAR %d %x\n", request_index, reply_target);
 
 		if (R_FAILED(ret)) {
 			// check if any handle has been closed
 			if (ret == 0xC920181A) {
 				if (request_index == -1) {
-					for (int i = 2; i < MAX_SESSIONS+SERVICE_ENDPOINTS; i++) {
+					for (int i = SERVICE_ENDPOINTS; i < MAX_SESSIONS+SERVICE_ENDPOINTS; i++) {
 						if (g_handles[i] == reply_target) {
 							request_index = i;
 							break;
@@ -580,10 +598,12 @@ int main() {
 			}
 			case 1: // new session
 			case 2: {// new session
+				logPrintf("New Session %d\n", request_index);
 				Handle handle;
 				if (R_FAILED(svcAcceptSession(&handle, g_handles[request_index]))) {
 					svcBreak(USERBREAK_ASSERT);
 				}
+				logPrintf("New Session accepted %x on index %d\n", handle, g_active_handles);
 				if (g_active_handles < MAX_SESSIONS+SERVICE_ENDPOINTS) {
 					g_handles[g_active_handles] = handle;
 					g_active_handles++;
@@ -593,6 +613,7 @@ int main() {
 				break;
 			}
 			default: { // session
+				logPrintf("cmd handle %x\n", request_index);
 				handle_commands();
 				reply_target = g_handles[request_index];
 				break;
@@ -600,8 +621,8 @@ int main() {
 		}
 	} while (!term_request);
 
-	srvSysUnregisterService("nfc:m");
-	srvSysUnregisterService("nfc:u");
+	srvUnregisterService("nfc:m");
+	srvUnregisterService("nfc:u");
 
 	svcCloseHandle(*hndNfuM);
 	svcCloseHandle(*hndNfuU);
