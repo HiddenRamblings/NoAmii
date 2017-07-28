@@ -524,7 +524,7 @@ loadFile_err:
 
 void initDump() {
 	//char *file = "/amiibo/Zelda (SSB)_201706081138.bin";
-	char *file = "/wario.bin";
+	char *file = "/amiibo_dump.bin";
 
 	int x = loadFile(file , AmiiboFileRaw, AMIIBO_MAX_SIZE);
 	if (x<=540) {
