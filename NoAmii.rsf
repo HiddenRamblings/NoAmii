@@ -112,7 +112,6 @@ AccessControlInfo:
     KernelSetState: 124
   InterruptNumbers:
   ServiceAccessControl:
-    - fs:LDR
     - fs:USER
   FileSystemAccess:
     - DirectSdmc
@@ -122,4 +121,4 @@ AccessControlInfo:
 SystemControlInfo:
   SaveDataSize: 0KB # It doesn't use any save data.
   RemasterVersion: 0
-  StackSize: 0x2000
+  StackSize: 0x9000

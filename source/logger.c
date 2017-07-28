@@ -8,7 +8,7 @@
 
 #define LOG_FILE "/luma/titles/lognfc.txt"
 
-#define ENABLE_LOGGING 1
+#define ENABLE_LOGGING 0
 
 #if ENABLE_LOGGING
 static int logger_started = 0;

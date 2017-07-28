@@ -29,9 +29,14 @@ FINAL_CXI   :=  0004013000004002.cxi
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
-CFLAGS	:= -flto -Wall -Os -mword-relocations \
-			-fomit-frame-pointer -ffunction-sections -fdata-sections \
+CFLAGS	:= -flto -Wall -Og -mword-relocations \
+			-ffunction-sections -fdata-sections \
+			-Werror=implicit-function-declaration \
 			$(ARCH)
+#CFLAGS	:= -flto -Wall -Os -mword-relocations \
+#			-fomit-frame-pointer -ffunction-sections -fdata-sections \
+#			-Werror=implicit-function-declaration \
+#			$(ARCH)
 
 CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS
 
@@ -40,7 +45,8 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu99
 ASFLAGS	:=	$(ARCH)
 LDFLAGS	=	-flto -specs=3dsx.specs $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lctru
+#LIBS	:= -lctru
+LIBS	:= -lctrud
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing

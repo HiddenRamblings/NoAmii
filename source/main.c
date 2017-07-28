@@ -1,6 +1,7 @@
 #include <3ds.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/iosupport.h>
 #include "services.h"
 #include "draw.h"
@@ -107,6 +108,7 @@ static void handle_commands(void) {
 	//service calls (such as IFILE_Write) will clobber it.
 
 	logState(cmdid, state);
+	logPrintf("cmd %x\n", cmdbuf[0]);
 	//showString("cmd", cmdbuf[0]);
 	static int stateCheckCounter = 10;
 	switch (cmdid) {
@@ -255,7 +257,7 @@ static void handle_commands(void) {
 			}
 
 			if (!(AmiiboFilePlain[0x2C] & 0x20)) {
-				showString("> 0x13 ", 2);
+				//showString("> 0x13 ", 2);
 				cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 				cmdbuf[1] = 0xC8A17620; //uninitialised
 				break;
@@ -351,10 +353,14 @@ static void handle_commands(void) {
 			break;
 		}
 		case 0x402: { // 	unknown nfc:m method
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 17, 0);
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
 			cmdbuf[1] = 0;
             memset(&cmdbuf[2], 0, 16*4);
-
+			break;
+		}
+		case 0x403: { // 	unknown nfc:m method
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+			cmdbuf[1] = 0;
 			break;
 		}
 		case 0x404: { // 	SetAmiiboSettings
@@ -454,11 +460,11 @@ static bool showString(const char *str, u32 value) {
 	Draw_ClearFramebuffer();
 	Draw_FlushFramebuffer();
 
-	//char buf[2048];
+	char buf[2048];
 
-	//sprintf(buf, "%s  0x%08x", str, (unsigned int)value);
+	sprintf(buf, "%s  0x%08x", str, (unsigned int)value);
 
-	Draw_DrawString(10, 10, COLOR_TITLE, str);
+	Draw_DrawString(10, 10, COLOR_TITLE, buf);
 	u32 key = waitInputWithTimeout(10 * 1000);
 	if (key & BUTTON_DOWN) {
 		svcBreak(USERBREAK_ASSERT);
@@ -469,6 +475,25 @@ static bool showString(const char *str, u32 value) {
 	svcKernelSetState(0x10000, 1);
 
 	return key & BUTTON_UP;
+}
+
+static u64 writeFile(const char *filename, u8 *data, int len) {
+	IFile file;
+
+    Result res = IFile_Open(&file, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""), fsMakePath(PATH_ASCII, filename), FS_OPEN_CREATE | FS_OPEN_WRITE);
+    if (R_FAILED(res)) {
+		return 0;
+    }
+
+    u64 total;
+	res = IFile_Write(&file, &total, data, len, FS_WRITE_FLUSH);
+	if (R_FAILED(res)) goto loadFile_err;
+
+	IFile_Close(&file);
+	return total;
+loadFile_err:
+	IFile_Close(&file);
+	return 0;
 }
 
 static int loadFile(const char *filename, u8 *data, int len) {
@@ -499,10 +524,11 @@ loadFile_err:
 
 void initDump() {
 	//char *file = "/amiibo/Zelda (SSB)_201706081138.bin";
-	char *file = "/amiibodump.bin";
+	char *file = "/wario.bin";
 
-	if (loadFile(file , AmiiboFileRaw, AMIIBO_MAX_SIZE)<=540) {
-		showString("Failed to read amiibo dump", 0);
+	int x = loadFile(file , AmiiboFileRaw, AMIIBO_MAX_SIZE);
+	if (x<=540) {
+		showString("Failed to read amiibo dump", x);
 	}
 
 	u8 key[160];
@@ -512,6 +538,7 @@ void initDump() {
 		amitool_setKeys(key, 160);
 		if (!amitool_unpack(AmiiboFileRaw, AMIIBO_MAX_SIZE, AmiiboFilePlain, AMIIBO_MAX_SIZE))
 			showString("Failed to decrypt amiibo", 0);
+		//writeFile("/wariodec.bin", AmiiboFilePlain, AMIIBO_MAX_SIZE);
 	}
 }
 
@@ -550,9 +577,9 @@ int main() {
 			cmdbuf[0] = 0xFFFF0000;
 		}
 		s32 request_index;
-		logPrintf("B SRAR %d %x\n", request_index, reply_target);
+		//logPrintf("B SRAR %d %x\n", request_index, reply_target);
 		ret = svcReplyAndReceive(&request_index, hndList, nmbActiveHandles, reply_target);
-		logPrintf("A SRAR %d %x\n", request_index, reply_target);
+		//logPrintf("A SRAR %d %x\n", request_index, reply_target);
 
 		if (R_FAILED(ret)) {
 			// check if any handle has been closed
@@ -584,12 +611,12 @@ int main() {
 				}
 				case 1: // new session
 				case 2: {// new session
-					logPrintf("New Session %d\n", request_index);
+					//logPrintf("New Session %d\n", request_index);
 					Handle handle;
 					if (R_FAILED(svcAcceptSession(&handle, hndList[request_index]))) {
 						svcBreak(USERBREAK_ASSERT);
 					}
-					logPrintf("New Session accepted %x on index %d\n", handle, nmbActiveHandles);
+					//logPrintf("New Session accepted %x on index %d\n", handle, nmbActiveHandles);
 					if (nmbActiveHandles < MAX_SESSIONS+SERVICE_ENDPOINTS) {
 						hndList[nmbActiveHandles] = handle;
 						nmbActiveHandles++;
@@ -599,7 +626,7 @@ int main() {
 					break;
 				}
 				default: { // session
-					logPrintf("cmd handle %x\n", request_index);
+					//logPrintf("cmd handle %x\n", request_index);
 					handle_commands();
 					reply_target = hndList[request_index];
 					break;
