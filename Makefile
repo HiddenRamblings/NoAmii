@@ -22,7 +22,7 @@ BUILD		:=	build
 SOURCES		:=	amitool amitool/mbedtls source
 DATA		:=	data
 INCLUDES	:=	include amitool/include
-FINAL_CXI   :=  0004013000004002.cxi
+OUTPUTDIR   :=  0004013000004002
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -113,7 +113,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT).cxi $(TARGET).elf $(TOPDIR)/$(FINAL_CXI)
+	@rm -fr $(BUILD) $(OUTPUT).cxi $(TARGET).elf $(TOPDIR)/$(OUTPUTDIR)
 
 
 #---------------------------------------------------------------------------------
@@ -124,11 +124,12 @@ DEPENDS	:=	$(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(TOPDIR)/$(FINAL_CXI)	: $(OUTPUT).cxi
-	@cp $< $@
+$(TOPDIR)/$(OUTPUTDIR)/exheader.bin	: $(OUTPUT).cxi
+	@mkdir $(TOPDIR)/$(OUTPUTDIR)
+	@ctrtool --exefsdir=$(TOPDIR)/$(OUTPUTDIR) --exheader=$(TOPDIR)/$(OUTPUTDIR)/exheader.bin $(OUTPUT).cxi
+	
 
 $(OUTPUT).cxi	: $(OUTPUT).elf
-	#$(MAKEROM) -f ncch -rsf ../loader.rsf -nocodepadding -o $@ -elf $<
 	$(MAKEROM) -f ncch -rsf ../NoAmii.rsf -o $@ -elf $<
 
 $(OUTPUT).elf	:	$(OFILES)
