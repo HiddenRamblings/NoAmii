@@ -9,6 +9,7 @@
 #include "input.h"
 #include "ifile.h"
 #include "nfc3d/amitool.h"
+#include "structs.h"
 
 #define MAX_SESSIONS 1
 #define SERVICE_ENDPOINTS 3
@@ -18,6 +19,24 @@
 #define AMIIBO_DAY_FROM_DATE(dt) (*((&dt)+1) & 0x1F)
 
 #define BSWAP_U32(num) ((num>>24)&0xff) | ((num<<8)&0xff0000) | ((num>>8)&0xff00) | ((num<<24)&0xff000000)
+
+u64 swap_uint64( u64 val )
+{
+    val = ((val << 8) & 0xFF00FF00FF00FF00ULL ) | ((val >> 8) & 0x00FF00FF00FF00FFULL );
+    val = ((val << 16) & 0xFFFF0000FFFF0000ULL ) | ((val >> 16) & 0x0000FFFF0000FFFFULL );
+    return (val << 32) | (val >> 32);
+}
+
+u32 swap_uint32( u32 val )
+{
+    val = ((val << 8) & 0xFF00FF00 ) | ((val >> 8) & 0xFF00FF );
+    return (val << 16) | (val >> 16);
+}
+
+u16 swap_uint16( u16 val )
+{
+    return (val << 8) | (val >> 8 );
+}
 
 
 static bool showString(const char *str, u32 value);
@@ -352,10 +371,17 @@ static void handle_commands(void) {
 			//logBuf("0x401 command", &cmdbuf[1], 3 * 4);
 			break;
 		}
-		case 0x402: { // 	unknown nfc:m method
-			cmdbuf[0] = IPC_MakeHeader(cmdid, 1, 0);
+		case 0x402: { // nfc:m method for getting app data section details
+			nfcAppDataResult appdataResult;
+			memset(&appdataResult, 0, sizeof(appdataResult));
+			cmdbuf[0] = IPC_MakeHeader(cmdid, 16, 0);
 			cmdbuf[1] = 0;
-            memset(&cmdbuf[2], 0, 16*4);
+			appdataResult.titleId = *((u64*)&AmiiboFilePlain[0xAC]);
+			appdataResult.appId =*((u32*)&AmiiboFilePlain[0xB6]);
+			appdataResult.titleId = swap_uint64(appdataResult.titleId);
+			appdataResult.appId = swap_uint32(appdataResult.appId);
+			appdataResult.unknown[0] = 0x02030002;
+			memcpy(&cmdbuf[2], &appdataResult, sizeof(appdataResult));
 			break;
 		}
 		case 0x403: { // 	unknown nfc:m method
@@ -388,7 +414,7 @@ static void handle_commands(void) {
 		case 0x407: { // 	unknown nfc:m method
 			cmdbuf[0] = IPC_MakeHeader(cmdid, 2, 0);
 			cmdbuf[1] = 0;
-			cmdbuf[2] = 0;
+			cmdbuf[2] = 0x30000001; //unknown
 			break;
 		}
 
